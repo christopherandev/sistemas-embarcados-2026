@@ -50,5 +50,5 @@ void app_main(void)
     printf("Restarting now.\n");
     printf("Trem bão\n");
     fflush(stdout);
-    esp_restart();
+    esp_restart(); 
 }
