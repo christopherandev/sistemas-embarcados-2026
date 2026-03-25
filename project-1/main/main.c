@@ -11,8 +11,9 @@
 
 TickType_t delay_ms(int milisseconds);
 
-const char gEspModelName[CHIP_POSIX_LINUX + 1][32] = 
+const char gEspModelName[CHIP_POSIX_LINUX][32] = 
 {
+    "INVALID_NAME_CHIP",
     "CHIP_ESP32",
     "CHIP_ESP32S2",
     "CHIP_ESP32S3",
@@ -71,10 +72,11 @@ void app_main(void)
             ESP_LOGE(TAG_2, "--------------------------------------------------------------\n");
             break;
         }
+
         ESP_LOGW(TAG_2, "\n--------------------------------------------------------------\n");
     
-        ESP_LOGW(TAG_2, "O tamanho da memória flash embutida é: %I64u MB", flash_size / (uint32_t)(1024 * 1024));
- 
+            ESP_LOGW(TAG_2, "O tamanho da memória flash embutida é: %d B | %d MB", flash_size, flash_size / (uint32_t)(1024 * 1024));
+  
         ESP_LOGW(TAG_2, "\n--------------------------------------------------------------\n");
         
         ESP_LOGW(TAG_2, "ESP-IDF versão: %s\n", esp_get_idf_version());
