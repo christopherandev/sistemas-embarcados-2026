@@ -67,6 +67,10 @@ static void gpio_task(void* arg)
     {
         if(xQueueReceive(gpio_queue, &io_num, portMAX_DELAY)) 
         {
+            vTaskDelay(delay_ms(50));
+            
+            if(gpio_get_level(io_num)) continue;
+
             ESP_LOGI(TAG_3, "O botão GPIO_%d foi precionado: binário 0x%08x", io_num , io_num);
             
             switch(io_num)
