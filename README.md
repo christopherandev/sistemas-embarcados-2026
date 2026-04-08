@@ -4,3 +4,7 @@ Pasta de trabalho e práticas na disciplina de sistemas embarcados 2026.1 CEFET-
 Alunos:
       - Christopher César de Melo Andrade 5° Período 
       - Max Muller Vitalino Da Silva 5° Período 
+
+> Documentações:
+
+      > [Prática 1](https://exemplo.com)
