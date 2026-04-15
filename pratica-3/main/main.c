@@ -51,13 +51,6 @@ const char gEspModelName[CHIP_POSIX_LINUX][32] =
     "CHIP_POSIX_LINUX"
 };
 
-enum
-{
-    E_TIMER_COUNT,
-    E_TIMER_ALARM,
-    E_TIMER_INFO
-}
-
 typedef struct 
 {
     uint64_t days;
@@ -66,15 +59,15 @@ typedef struct
     uint64_t seconds;
     uint64_t milis;
     uint64_t elapsed;
-} clock_t;
-
-clock_t Clock;
+} cclock_t;
 
 static const char* TAG_1 = "[ PRATICA 1.1 ]";
 static const char* TAG_2 = "[ PRATICA 1.2 ]";
 static const char* TAG_3 = "[ PRATICA 2.0 ]";
 static const char* TAG_4 = "[ PRATICA 3.0 ]";
 static const char* TAG_5 = "[ RELÓGIO ]";
+
+uint64_t GetMilisFromMHz(uint64_t MHz);
 
 static void IRAM_ATTR gpio_handle(void* arg)
 {
@@ -117,17 +110,10 @@ static void gpio_task(void* arg)
     }
 }
 
-static bool IRAM_ATTR OnSecondsUpdate(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
+static bool IRAM_ATTR OnMilisUpdate(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
 {
     BaseType_t high_task_awoken = pdFALSE;
     QueueHandle_t queue = (QueueHandle_t)user_data;
-
-    uint64_t Timer[E_TIMER_INFO];
-
-    Timer[E_TIMER_COUNT] = edata->count_value;
-    Timer[E_TIMER_ALARM] = edata->alarm_value;
-
-    xQueueSendFromISR(queue, Timer, high_task_awoken);
 
     gptimer_alarm_config_t alarm_config = 
     {
@@ -135,6 +121,15 @@ static bool IRAM_ATTR OnSecondsUpdate(gptimer_handle_t timer, const gptimer_alar
     };
 
     gptimer_set_alarm_action(timer, &alarm_config);
+
+    if(!(edata->alarm_value % 1000000))
+    { 
+        cclock_t Clock;
+
+        Clock.elapsed = edata->alarm_value;
+    
+        xQueueSendFromISR(queue, &Clock, &high_task_awoken);
+    }
 
     return (high_task_awoken == pdTRUE);
 }
@@ -152,10 +147,12 @@ static void timer_task(void* arg)
 
     gptimer_event_callbacks_t callback = 
     {
-        .on_alarm = OnSecondsUpdate,
+        .on_alarm = OnMilisUpdate,
     };
-    ESP_ERROR_CHECK(gptimer_register_event_callbacks(gptimer, callback, queue));
+    ESP_ERROR_CHECK(gptimer_register_event_callbacks(gptimer, &callback, timer_queue));
 
+    ESP_ERROR_CHECK(gptimer_enable(gptimer));
+    
     gptimer_alarm_config_t alarm_config = 
     {
         .alarm_count = 100000, 
@@ -163,27 +160,24 @@ static void timer_task(void* arg)
     ESP_ERROR_CHECK(gptimer_set_alarm_action(gptimer, &alarm_config));
     ESP_ERROR_CHECK(gptimer_start(gptimer));
 
-    uint64_t Timer[E_TIMER_INFO];
-    
+    cclock_t Clock;
+
     while(1)
     {
-        if(xQueueReceive(queue, &Timer, pdMS_TO_TICKS(1500)))   
+        if(xQueueReceive(timer_queue, &Clock, pdMS_TO_TICKS(1500)))   
         {
-            Clock.elapsed = GetMilisFromMHz(Timer[E_TIMER_ALARM]);
-            Clock.days    = Clock.elapsed / (1000 * 60 * 60 * 24);
-            Clock.hour    = Clock.elapsed / (1000 * 60 * 60) % 24;
-            Clock.minutes = Clock.elapsed / (1000 * 60) % 60;
-            Clock.seconds = Clock.elapsed / (1000) % 60;
-            Clock.milis   = Clock.elapsed % (1000);
+            Clock.milis    = GetMilisFromMHz(Clock.elapsed);
+            Clock.days     = Clock.milis / (1000 * 60 * 60 * 24);
+            Clock.hours    = Clock.milis / (1000 * 60 * 60) % 24;
+            Clock.minutes  = Clock.milis / (1000 * 60) % 60;
+            Clock.seconds  = Clock.milis / (1000) % 60;
 
-            ESP_LOGI(TAG_5, "DIA: %02d | %02d:%02d:%02d:%04d", 
-                Clock.days, Clock.hour, Clock.minutes, Clock.seconds, Clock.milis);
+            ESP_LOGI(TAG_5, "Dias: %02llu | %02llu:%02llu:%02llu", 
+                    Clock.days, Clock.hours, Clock.minutes, Clock.seconds);
         }
-
         else  
             ESP_LOGW(TAG_4, "Aviso: Contagem perdida!");
     }
-
 }
 
 void app_main(void)
@@ -243,11 +237,13 @@ void app_main(void)
     gpio_isr_handler_add(GPIO_INPUT_IO_21, gpio_handle, (void*) GPIO_INPUT_IO_21);
     gpio_isr_handler_add(GPIO_INPUT_IO_22, gpio_handle, (void*) GPIO_INPUT_IO_22);
     gpio_isr_handler_add(GPIO_INPUT_IO_23, gpio_handle, (void*) GPIO_INPUT_IO_23);
- 
-    timer_queue = xQueueCreate(10, sizeof(uint64_t) * E_TIMER_INFO);
+    
+    cclock_t Clock;
+    
+    timer_queue = xQueueCreate(10, sizeof(Clock));
     xTaskCreate(timer_task, "timer_task", 2048, NULL, 1, NULL);
 
-    if(!queue) 
+    if(!timer_queue) 
     {
         ESP_LOGE(TAG_4, "ERRO: Não foi possível criar a fila corretamente.");
         return;
@@ -300,5 +296,5 @@ TickType_t delay_ms(int milisseconds)
 
 uint64_t GetMilisFromMHz(uint64_t MHz)
 {
-    return (uint32_t) (MHz / 100000) 
+    return (uint64_t) (MHz / 1000); 
 }
