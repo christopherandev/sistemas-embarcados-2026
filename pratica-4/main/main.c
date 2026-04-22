@@ -47,6 +47,7 @@ uint64_t GetMilisFromMHz(uint64_t MHz);
 
 static QueueHandle_t gpio_queue  = NULL;
 static QueueHandle_t timer_queue = NULL;
+static QueueHandle_t pwm_queue = NULL;
 
 const char gEspModelName[CHIP_POSIX_LINUX][32] = 
 {
@@ -96,6 +97,7 @@ static void IRAM_ATTR gpio_handle(void* arg)
 {
     uint32_t gpio_num = (uint32_t) arg;
     xQueueSendFromISR(gpio_queue, &gpio_num, NULL);
+    xQueueSendFromISR(pwm_queue, &gpio_num, NULL);
 }
 
 static void gpio_task(void* arg)
@@ -285,39 +287,48 @@ static void pwm_task(void* arg)
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel_1));
 
+    pwm_queue = xQueueCreate(10, sizeof(uint32_t));
+
     semaphore_pwm = xSemaphoreCreateBinary();
 
     PWM.mode = true;
     PWM.duty = 0;
 
     while(1)
-    {  
+    {
+        if(xQueueReceive(pwm_queue, &io_num, pdMS_TO_TICKS(10)))
+        {
+            vTaskDelay(delay_ms(50));
+            
+            if(gpio_get_level(io_num)) continue;
+            
+            switch(io_num)
+            {
+                case ( GPIO_INPUT_IO_21 ):  
+                    PWM.mode = true;
+                break;
+
+                case ( GPIO_INPUT_IO_22 ):    
+                    PWM.mode = false;
+                    ESP_LOGW(TAG_6, "Modo: Manual | Duty: %d", PWM.duty);
+                    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
+                    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
+                break;
+            
+                case ( GPIO_INPUT_IO_23 ):
+                    if(!PWM.mode)
+                    {
+                        PWM.duty = (PWM.duty >= 8192) ? 0 : PWM.duty + PWM_AUTO_INCREMENT;                            
+                        ESP_LOGW(TAG_6, "Modo: Manual | Duty: %d", PWM.duty);
+                        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
+                        ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));     
+                    }
+                break;
+            }
+        }
+
         if(xSemaphoreTake(semaphore_pwm, portMAX_DELAY) == pdTRUE)
         {            
-            if(xQueueReceive(gpio_queue, &io_num, pdMS_TO_TICKS(10)))
-            {
-                ESP_LOGI(TAG_6, "O botão GPIO_%d foi precionado: binário 0x%08x", io_num , io_num);
-            
-                switch(io_num)
-                {
-                    case ( GPIO_INPUT_IO_21 ):  
-                        PWM.mode = true;
-                    break;
-
-                    case ( GPIO_INPUT_IO_22 ):    
-                        PWM.mode = false;
-                    break;
-                
-                    case ( GPIO_INPUT_IO_23 ):
-                        if(!PWM.mode)
-                        {
-                            PWM.duty = (PWM.duty >= 8192) ? 0 : PWM.duty + PWM_AUTO_INCREMENT;                            
-                            ESP_LOGW(TAG_6, "Modo: Manual | Duty: %d", PWM.duty);
-                        }
-                    break;
-                }
-            }
-
             if(PWM.mode)
             {
                 ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
