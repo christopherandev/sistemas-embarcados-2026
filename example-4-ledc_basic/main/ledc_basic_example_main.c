@@ -61,10 +61,9 @@ void app_main(void)
     {
         for(int i = 0; i < 8192; i += 64)
         {   
-            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, i));
-            // Update duty to apply the new value
+           // Update duty to apply the new value
             ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
-            vTaskDelay((5 / portTICK_PERIOD_MS));
+            vTaskDelay((10 / portTICK_PERIOD_MS));
         }
 
         for(int i = 8192; i >= 0; i -= 64)
@@ -72,7 +71,7 @@ void app_main(void)
             ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, i));
             // Update duty to apply the new value
             ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
-            vTaskDelay((5 / portTICK_PERIOD_MS));
+            vTaskDelay((10 / portTICK_PERIOD_MS));
         }
     }
 }
