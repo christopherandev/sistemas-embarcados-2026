@@ -37,7 +37,7 @@
 
 #define ESP_INTR_FLAG_DEFAULT 0
 
-#define PWM_AUTO_INCREMENT  (128)
+#define PWM_AUTO_INCREMENT  (1024)
 
 TickType_t delay_ms(int milisseconds);
 
@@ -143,7 +143,7 @@ static void gpio_task(void* arg)
     {
         if(xQueueReceive(gpio_queue, &io_num, portMAX_DELAY)) 
         {
-            vTaskDelay(delay_ms(50));
+            vTaskDelay(delay_ms(10));
             
             if(gpio_get_level(io_num)) continue;
 
@@ -270,7 +270,7 @@ static void pwm_task(void* arg)
         .channel        = LEDC_CHANNEL_0,
         .timer_sel      = LEDC_TIMER_0,
         .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = GPIO_OUTPUT_IO_17,
+        .gpio_num       = GPIO_OUTPUT_IO_26,
         .duty           = 0,
         .hpoint         = 0
     };
@@ -298,7 +298,7 @@ static void pwm_task(void* arg)
     {
         if(xQueueReceive(pwm_queue, &io_num, pdMS_TO_TICKS(10)))
         {
-            vTaskDelay(delay_ms(50));
+            vTaskDelay(delay_ms(10));
             
             if(gpio_get_level(io_num)) continue;
             
@@ -308,9 +308,11 @@ static void pwm_task(void* arg)
                     PWM.mode = true;
                 break;
 
-                case ( GPIO_INPUT_IO_22 ):    
+                case ( GPIO_INPUT_IO_22 ): 
+                    if(!PWM.mode) continue;   
+
                     PWM.mode = false;
-                    ESP_LOGW(TAG_6, "Modo: Manual | Duty: %d", PWM.duty);
+                    ESP_LOGW(TAG_6, "Modo: Manual     | Duty: %d", PWM.duty);
                     ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
                     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
                 break;
@@ -319,7 +321,7 @@ static void pwm_task(void* arg)
                     if(!PWM.mode)
                     {
                         PWM.duty = (PWM.duty >= 8192) ? 0 : PWM.duty + PWM_AUTO_INCREMENT;                            
-                        ESP_LOGW(TAG_6, "Modo: Manual | Duty: %d", PWM.duty);
+                        ESP_LOGW(TAG_6, "Modo: Manual     | Duty: %d", PWM.duty);
                         ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
                         ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));     
                     }
