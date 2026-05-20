@@ -20,7 +20,6 @@
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 
-
 #define GPIO_INPUT_IO_21    (21)
 #define GPIO_INPUT_IO_22    (22)
 #define GPIO_INPUT_IO_23    (23)
@@ -42,11 +41,13 @@
 
 #define ESP_INTR_FLAG_DEFAULT 0
 
-#define PWM_AUTO_INCREMENT  (128)
+#define PWM_AUTO_INCREMENT  (64)
 
 TickType_t delay_ms(int milisseconds);
 
 void PrintEspInfo();
+
+void UpdatePWN(uint16_t duty);
 
 uint64_t GetMilisFromMHz(uint64_t MHz);
 
@@ -237,7 +238,6 @@ static void timer_task(void* arg)
     ESP_ERROR_CHECK(gptimer_set_alarm_action(gptimer, &alarm_config));
     ESP_ERROR_CHECK(gptimer_start(gptimer));
 
-    //-------------ADC1 Calibration Init---------------//
     adc_cali_handle_t adc_cali_handle = NULL;
 
     adc_cali_line_fitting_config_t cali_config = 
@@ -268,9 +268,9 @@ static void timer_task(void* arg)
             xSemaphoreGive(semaphore_pwm);
             xSemaphoreGive(semaphore_adc);
 
-            if(!(Clock.alarm_value % 1000000))
+            if(xQueueReceive(adc_queue, &adc_raw, pdMS_TO_TICKS(10)))
             {
-                if(xQueueReceive(adc_queue, &adc_raw, pdMS_TO_TICKS(1500)))
+                if(!(Clock.alarm_value % 1000000))
                 {
                     ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &adc_cali));
                     ESP_LOGI(TAG_7, "adc_raw %d mV - adc_cali %d mV", adc_raw, adc_cali);
@@ -344,24 +344,16 @@ static void pwm_task(void* arg)
                 case ( GPIO_INPUT_IO_22 ):    
                     PWM.mode = false;
                     ESP_LOGW(TAG_6, "Modo: Manual | Duty: %d", PWM.duty);
-                    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
-                    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
-
-                    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, PWM.duty));
-                    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
+                    UpdatePWN(PWM.duty);
                 break;
             
                 case ( GPIO_INPUT_IO_23 ):
                     if(!PWM.mode)
                     {
-                        PWM.duty = (PWM.duty >= 8192) ? 0 : PWM.duty + PWM_AUTO_INCREMENT;                            
+                        PWM.duty = (PWM.duty >= 8192) ? 0 : PWM.duty + PWM_AUTO_INCREMENT;
+                        
                         ESP_LOGW(TAG_6, "Modo: Manual | Duty: %d", PWM.duty);
-                        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
-                        ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));     
-
-                        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, PWM.duty));
-                        ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
-                
+                        UpdatePWN(PWM.duty);
                     }
                 break;
             }
@@ -371,14 +363,8 @@ static void pwm_task(void* arg)
         {            
             if(PWM.mode)
             {
-                ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, PWM.duty));
-                ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
-                
-                ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, PWM.duty));
-                ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
-                
-
-
+                UpdatePWN(PWM.duty);
+            
                 PWM.duty = (PWM.duty >= 8192) ? 0 : PWM.duty + PWM_AUTO_INCREMENT; 
                 ESP_LOGI(TAG_6, "Modo: Automático | Duty: %d", PWM.duty);
             }
@@ -388,7 +374,6 @@ static void pwm_task(void* arg)
 
 static void adc_task(void* arg)
 {
-    //-------------ADC1 Init---------------//
     adc_oneshot_unit_handle_t adc_handle;
     adc_oneshot_unit_init_cfg_t init_config = 
     {
@@ -396,7 +381,7 @@ static void adc_task(void* arg)
     };
     
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc_handle));
-    //-------------ADC1 Config---------------//
+
     adc_oneshot_chan_cfg_t config = 
     {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
@@ -410,7 +395,7 @@ static void adc_task(void* arg)
 
     semaphore_adc = xSemaphoreCreateBinary();
 
-    while (1)
+    while(1)
     {
         if(xSemaphoreTake(semaphore_adc, portMAX_DELAY) == pdTRUE)
         {   
@@ -507,4 +492,12 @@ TickType_t delay_ms(int milisseconds)
 uint64_t GetMilisFromMHz(uint64_t MHz)
 {
     return (uint64_t) (MHz / 1000); 
+}
+
+void UpdatePWN(uint16_t duty)
+{
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));     
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
 }
