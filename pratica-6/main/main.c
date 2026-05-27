@@ -73,22 +73,17 @@ static QueueHandle_t timer_queue = NULL;
 static QueueHandle_t pwm_queue = NULL;
 static QueueHandle_t adc_queue = NULL;
 
+static lv_obj_t *label_clock;
+static lv_obj_t *label_adc;
+
+static char clock_text[32];
+static char adc_text[32];
+
 const char gEspModelName[CHIP_POSIX_LINUX][32] = 
 {
-    "INVALID_NAME_CHIP",
-    "CHIP_ESP32",
-    "CHIP_ESP32S2",
-    "CHIP_ESP32S3",
-    "CHIP_ESP32C3",
-    "CHIP_ESP32C2",
-    "CHIP_ESP32C6",
-    "CHIP_ESP32H2",
-    "CHIP_ESP32P4",
-    "CHIP_ESP32C61",
-    "CHIP_ESP32C5",
-    "CHIP_ESP32H21",
-    "CHIP_ESP32H4",
-    "CHIP_POSIX_LINUX"
+    "INVALID_NAME_CHIP", "CHIP_ESP32", "CHIP_ESP32S2", "CHIP_ESP32S3", "CHIP_ESP32C3", 
+    "CHIP_ESP32C2", "CHIP_ESP32C6", "CHIP_ESP32H2", "CHIP_ESP32P4", "CHIP_ESP32C61", 
+    "CHIP_ESP32C5", "CHIP_ESP32H21", "CHIP_ESP32H4", "CHIP_POSIX_LINUX"
 };
 
 typedef struct 
@@ -123,20 +118,171 @@ static SemaphoreHandle_t semaphore_adc = NULL;
 static uint8_t oled_buffer[LCD_H_RES * LCD_V_RES / 8];
 static _lock_t lvgl_api_lock;
 
-TickType_t delay_ms(int milisseconds);
-void PrintEspInfo();
-void UpdatePWN(uint16_t duty);
-uint64_t GetMilisFromMHz(uint64_t MHz);
-void lvgl_ui(lv_display_t *disp, const char *letter);
-static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t io_panel, esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
-static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
-static void example_increase_lvgl_tick(void *arg);
+void PrintEspInfo()
+{
+    ESP_LOGE(TAG_1, "ISSO AQUI É UM LOG DE ERRO");
+    ESP_LOGW(TAG_1, "ISSO AQUI É UM LOG DE WARNING");
+    ESP_LOGI(TAG_1, "ISSO AQUI É UM LOG DE INFO");
+
+    ESP_LOGI(TAG_1, "\nDefinindo LOG_LEVEL como ESP_LOG_WARN\n");
+    esp_log_level_set(TAG_1, ESP_LOG_WARN);
+
+    ESP_LOGE(TAG_1, "LOG_LEVEL < ESP_LOG_ERRO : SEREI IMPRESSO NO SERIAL");
+    ESP_LOGW(TAG_1, "LOG_LEVEL = ESP_LOG_WARN : SEREI IMPRESSO NO SERIAL");
+    ESP_LOGI(TAG_1, "LOG_LEVEL > ESP_LOG_INFO : NÃO SEREI IMPRESSO NO SERIAL");
+
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+    uint32_t flash_size;
+
+    ESP_LOGI(TAG_2, "--------------------------------------------------------------\n");
+    
+    ESP_LOGI(TAG_2, "Modelo do ESP: chip_info.model = %d  |  %s\n", chip_info.model, gEspModelName[chip_info.model]);
+    ESP_LOGI(TAG_2, "Possui memória flash embutida ?         %s", chip_info.features & CHIP_FEATURE_EMB_FLASH ? "Sim" : "Não");
+    ESP_LOGI(TAG_2, "Possui WIFI 2,4 GHz ?                   %s", chip_info.features & CHIP_FEATURE_WIFI_BGN ? "Sim" : "Não");
+    ESP_LOGI(TAG_2, "Possui Bluetooth LE ?                   %s", chip_info.features & CHIP_FEATURE_BLE ? "Sim" : "Não");
+    ESP_LOGI(TAG_2, "Possui Bluetooth Classic ?              %s", chip_info.features & CHIP_FEATURE_BT ? "Sim" : "Não");
+    ESP_LOGI(TAG_2, "Possui IEEE 802.15.4 ?                  %s", chip_info.features & CHIP_FEATURE_IEEE802154 ? "Sim" : "Não");
+    ESP_LOGI(TAG_2, "Possui PSRAM embutida ?                 %s", chip_info.features & CHIP_FEATURE_EMB_PSRAM ? "Sim\n" : "Não\n");
+
+    ESP_LOGI(TAG_2, "Número de revisão: v%d.%d", chip_info.revision / 100, chip_info.revision % 100);
+
+    ESP_LOGI(TAG_2, "Cores (núcleos): %d\n", chip_info.cores);
+
+    if(esp_flash_get_size(NULL, &flash_size) != ESP_OK) 
+    {
+        ESP_LOGE(TAG_2, "--------------------------------------------------------------\n");
+        ESP_LOGE(TAG_2, "\nERRO: Não foi possível obter informação do tamanho da memória flash embutida!\n");
+        ESP_LOGE(TAG_2, "--------------------------------------------------------------\n");
+        return;
+    }
+
+    ESP_LOGW(TAG_2, "\n--------------------------------------------------------------\n");
+    ESP_LOGW(TAG_2, "O tamanho da memória flash embutida é: %d B | %d MB", flash_size, flash_size / (uint32_t)(1024 * 1024));
+    ESP_LOGW(TAG_2, "\n--------------------------------------------------------------\n");
+    ESP_LOGW(TAG_2, "ESP-IDF versão: %s\n", esp_get_idf_version());
+    ESP_LOGW(TAG_2, "--------------------------------------------------------------\n");
+}
+
+TickType_t delay_ms(int milisseconds) 
+{
+    return (milisseconds / portTICK_PERIOD_MS);
+}
+
+uint64_t GetMilisFromMHz(uint64_t MHz)
+{
+    return (uint64_t) (MHz / 1000); 
+}
+
+void UpdatePWN(uint16_t duty)
+{
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));     
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
+}
+
+static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t io_panel, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
+{
+    lv_display_t *disp = (lv_display_t *)user_ctx;
+    lv_display_flush_ready(disp);
+    return false;
+}
+
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
+
+    px_map += LVGL_PALETTE_SIZE;
+
+    uint16_t hor_res = lv_display_get_physical_horizontal_resolution(disp);
+    int x1 = area->x1;
+    int x2 = area->x2;
+    int y1 = area->y1;
+    int y2 = area->y2;
+
+    for (int y = y1; y <= y2; y++) 
+    {
+        for (int x = x1; x <= x2; x++) 
+        {
+            bool chroma_color = (px_map[(hor_res >> 3) * y  + (x >> 3)] & 1 << (7 - x % 8));
+
+            uint8_t *buf = oled_buffer + hor_res * (y >> 3) + (x);
+
+            if (chroma_color) 
+            {
+                (*buf) &= ~(1 << (y % 8));
+            } 
+
+            else 
+            {
+                (*buf) |= (1 << (y % 8));
+            }
+        }
+    }
+   
+    esp_lcd_panel_draw_bitmap(panel_handle, x1, y1, x2 + 1, y2 + 1, oled_buffer);
+}
+
+static void increase_lvgl_tick(void *arg)
+{
+    lv_tick_inc(LVGL_TICK_PERIOD_MS);
+}
+
+static void ui_create(lv_display_t *display)
+{
+    lv_obj_t *scr = lv_display_get_screen_active(display);
+
+    label_clock = lv_label_create(scr);
+    lv_obj_align(label_clock, LV_ALIGN_TOP_MID, 0, 10);
+
+    label_adc = lv_label_create(scr);
+    lv_obj_align(label_adc, LV_ALIGN_BOTTOM_MID, 0, -10);
+
+    lv_label_set_text(label_clock, "00:00:00");
+    lv_label_set_text(label_adc, "ADC: 0 mV");
+}
+
+static void ui_update(cclock_t Clock, int voltage)
+{
+    sprintf(clock_text, "%02llu dias %02llu:%02llu:%02llu", Clock.days, Clock.hours, Clock.minutes, Clock.seconds);
+    sprintf(adc_text, "ADC: %d mV", voltage);
+
+    _lock_acquire(&lvgl_api_lock);
+
+    lv_label_set_text(label_clock, clock_text);
+    lv_label_set_text(label_adc, adc_text);
+
+    _lock_release(&lvgl_api_lock);
+}
 
 static void IRAM_ATTR gpio_handle(void* arg)
 {
     uint32_t gpio_num = (uint32_t) arg;
     xQueueSendFromISR(gpio_queue, &gpio_num, NULL);
     xQueueSendFromISR(pwm_queue, &gpio_num, NULL);
+}
+
+static bool IRAM_ATTR OnMilisUpdate(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
+{
+    BaseType_t high_task_awoken = pdFALSE;
+    QueueHandle_t queue = (QueueHandle_t)user_data;
+
+    gptimer_alarm_config_t alarm_config = 
+    {
+        .alarm_count = edata->alarm_value + 100000,
+    };
+
+    gptimer_set_alarm_action(timer, &alarm_config);
+
+    cclock_t Clock;
+
+    Clock.alarm_value = edata->alarm_value;
+    Clock.count_value = edata->count_value;
+    
+    xQueueSendFromISR(queue, &Clock, &high_task_awoken);
+
+    return (high_task_awoken == pdTRUE);
 }
 
 static void gpio_task(void* arg)
@@ -207,28 +353,6 @@ static void gpio_task(void* arg)
             }
         }
     }
-}
-
-static bool IRAM_ATTR OnMilisUpdate(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
-{
-    BaseType_t high_task_awoken = pdFALSE;
-    QueueHandle_t queue = (QueueHandle_t)user_data;
-
-    gptimer_alarm_config_t alarm_config = 
-    {
-        .alarm_count = edata->alarm_value + 100000,
-    };
-
-    gptimer_set_alarm_action(timer, &alarm_config);
-
-    cclock_t Clock;
-
-    Clock.alarm_value = edata->alarm_value;
-    Clock.count_value = edata->count_value;
-    
-    xQueueSendFromISR(queue, &Clock, &high_task_awoken);
-
-    return (high_task_awoken == pdTRUE);
 }
 
 static void timer_task(void* arg)
@@ -304,6 +428,8 @@ static void timer_task(void* arg)
                 {
                     ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &adc_cali));
                     ESP_LOGI(TAG_7, "adc_raw %d mV - adc_cali %d mV", adc_raw, adc_cali);
+
+                    ui_update(Clock, adc_cali);
                 }
             }
         }
@@ -440,14 +566,16 @@ static void adc_task(void* arg)
 static void lvgl_port_task(void *arg)
 {
     uint32_t time_till_next_ms = 0;
-    while (1) {
+
+    while (1) 
+    {
         _lock_acquire(&lvgl_api_lock);
         time_till_next_ms = lv_timer_handler();
         _lock_release(&lvgl_api_lock);
-        // in case of triggering a task watch dog time out
+   
         time_till_next_ms = MAX(time_till_next_ms, LVGL_TASK_MIN_DELAY_MS);
-        // in case of lvgl display not ready yet
         time_till_next_ms = MIN(time_till_next_ms, LVGL_TASK_MAX_DELAY_MS);
+
         usleep(1000 * time_till_next_ms);
     }
 }
@@ -517,13 +645,13 @@ static void display_task(void *arg)
 
     const esp_lcd_panel_io_callbacks_t callback = 
     {
-        .on_color_trans_done = example_notify_lvgl_flush_ready,
+        .on_color_trans_done = notify_lvgl_flush_ready,
     };
     esp_lcd_panel_io_register_event_callbacks(lcd_handle, &callback, display);
 
     const esp_timer_create_args_t lvgl_tick_timer_args =
     {
-        .callback = &example_increase_lvgl_tick,
+        .callback = &increase_lvgl_tick,
         .name = "lvgl_tick"
     };
     esp_timer_handle_t lvgl_tick_timer = NULL;
@@ -533,19 +661,14 @@ static void display_task(void *arg)
 
     xTaskCreate(lvgl_port_task, "lvgl_port_task", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL);
 
-    // _lock_acquire(&lvgl_api_lock);
-    // lvgl_ui(display);
-    // _lock_release(&lvgl_api_lock);
+    _lock_acquire(&lvgl_api_lock);
+    ui_create(display);
+    _lock_release(&lvgl_api_lock);
 
-    char letter = 32;
+    //char letter = 32;
 
     while (1) 
     {
-        _lock_acquire(&lvgl_api_lock);
-        lvgl_ui(display, &letter);
-        _lock_release(&lvgl_api_lock);
-        
-        letter = letter > 126 ? 32 : letter + 1;
         vTaskDelay(delay_ms(250));
     }
 }
@@ -578,136 +701,4 @@ void app_main(void)
     }
 
     return;
-}
-
-void PrintEspInfo()
-{
-    ESP_LOGE(TAG_1, "ISSO AQUI É UM LOG DE ERRO");
-    ESP_LOGW(TAG_1, "ISSO AQUI É UM LOG DE WARNING");
-    ESP_LOGI(TAG_1, "ISSO AQUI É UM LOG DE INFO");
-
-    ESP_LOGI(TAG_1, "\nDefinindo LOG_LEVEL como ESP_LOG_WARN\n");
-    esp_log_level_set(TAG_1, ESP_LOG_WARN);
-
-    ESP_LOGE(TAG_1, "LOG_LEVEL < ESP_LOG_ERRO : SEREI IMPRESSO NO SERIAL");
-    ESP_LOGW(TAG_1, "LOG_LEVEL = ESP_LOG_WARN : SEREI IMPRESSO NO SERIAL");
-    ESP_LOGI(TAG_1, "LOG_LEVEL > ESP_LOG_INFO : NÃO SEREI IMPRESSO NO SERIAL");
-
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
-    uint32_t flash_size;
-
-    ESP_LOGI(TAG_2, "--------------------------------------------------------------\n");
-    
-    ESP_LOGI(TAG_2, "Modelo do ESP: chip_info.model = %d  |  %s\n", chip_info.model, gEspModelName[chip_info.model]);
-    ESP_LOGI(TAG_2, "Possui memória flash embutida ?         %s", chip_info.features & CHIP_FEATURE_EMB_FLASH ? "Sim" : "Não");
-    ESP_LOGI(TAG_2, "Possui WIFI 2,4 GHz ?                   %s", chip_info.features & CHIP_FEATURE_WIFI_BGN ? "Sim" : "Não");
-    ESP_LOGI(TAG_2, "Possui Bluetooth LE ?                   %s", chip_info.features & CHIP_FEATURE_BLE ? "Sim" : "Não");
-    ESP_LOGI(TAG_2, "Possui Bluetooth Classic ?              %s", chip_info.features & CHIP_FEATURE_BT ? "Sim" : "Não");
-    ESP_LOGI(TAG_2, "Possui IEEE 802.15.4 ?                  %s", chip_info.features & CHIP_FEATURE_IEEE802154 ? "Sim" : "Não");
-    ESP_LOGI(TAG_2, "Possui PSRAM embutida ?                 %s", chip_info.features & CHIP_FEATURE_EMB_PSRAM ? "Sim\n" : "Não\n");
-
-    ESP_LOGI(TAG_2, "Número de revisão: v%d.%d", chip_info.revision / 100, chip_info.revision % 100);
-
-    ESP_LOGI(TAG_2, "Cores (núcleos): %d\n", chip_info.cores);
-
-    if(esp_flash_get_size(NULL, &flash_size) != ESP_OK) 
-    {
-        ESP_LOGE(TAG_2, "--------------------------------------------------------------\n");
-        ESP_LOGE(TAG_2, "\nERRO: Não foi possível obter informação do tamanho da memória flash embutida!\n");
-        ESP_LOGE(TAG_2, "--------------------------------------------------------------\n");
-        return;
-    }
-
-    ESP_LOGW(TAG_2, "\n--------------------------------------------------------------\n");
-
-    ESP_LOGW(TAG_2, "O tamanho da memória flash embutida é: %d B | %d MB", flash_size, flash_size / (uint32_t)(1024 * 1024));
-
-    ESP_LOGW(TAG_2, "\n--------------------------------------------------------------\n");
-    
-    ESP_LOGW(TAG_2, "ESP-IDF versão: %s\n", esp_get_idf_version());
-
-    ESP_LOGW(TAG_2, "--------------------------------------------------------------\n");
-}
-
-TickType_t delay_ms(int milisseconds) 
-{
-    return (milisseconds / portTICK_PERIOD_MS);
-}
-
-uint64_t GetMilisFromMHz(uint64_t MHz)
-{
-    return (uint64_t) (MHz / 1000); 
-}
-
-void UpdatePWN(uint16_t duty)
-{
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));     
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
-}
-
-/* DISPLAY */
-
-void lvgl_ui(lv_display_t *disp, const char *letter)
-{
-    lv_obj_t *scr = lv_display_get_screen_active(disp);
-    lv_obj_t *label = lv_label_create(scr);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
-    lv_label_set_text(label, letter);
-    /* Size of the screen (if you use rotation 90 or 270, please use lv_display_get_vertical_resolution) */
-    lv_obj_set_width(label, lv_display_get_horizontal_resolution(disp));
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-}
-
-static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t io_panel, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
-{
-    lv_display_t *disp = (lv_display_t *)user_ctx;
-    lv_display_flush_ready(disp);
-    return false;
-}
-
-static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
-{
-    esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
-
-    // This is necessary because LVGL reserves 2 x 4 bytes in the buffer, as these are assumed to be used as a palette. Skip the palette here
-    // More information about the monochrome, please refer to https://docs.lvgl.io/9.2/porting/display.html#monochrome-displays
-    px_map += LVGL_PALETTE_SIZE;
-
-    uint16_t hor_res = lv_display_get_physical_horizontal_resolution(disp);
-    int x1 = area->x1;
-    int x2 = area->x2;
-    int y1 = area->y1;
-    int y2 = area->y2;
-
-    for (int y = y1; y <= y2; y++) {
-        for (int x = x1; x <= x2; x++) {
-            /* The order of bits is MSB first
-                        MSB           LSB
-               bits      7 6 5 4 3 2 1 0
-               pixels    0 1 2 3 4 5 6 7
-                        Left         Right
-            */
-            bool chroma_color = (px_map[(hor_res >> 3) * y  + (x >> 3)] & 1 << (7 - x % 8));
-
-            /* Write to the buffer as required for the display.
-            * It writes only 1-bit for monochrome displays mapped vertically.*/
-            uint8_t *buf = oled_buffer + hor_res * (y >> 3) + (x);
-            if (chroma_color) {
-                (*buf) &= ~(1 << (y % 8));
-            } else {
-                (*buf) |= (1 << (y % 8));
-            }
-        }
-    }
-    // pass the draw buffer to the driver
-    esp_lcd_panel_draw_bitmap(panel_handle, x1, y1, x2 + 1, y2 + 1, oled_buffer);
-}
-
-static void example_increase_lvgl_tick(void *arg)
-{
-    /* Tell LVGL how many milliseconds has elapsed */
-    lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }
