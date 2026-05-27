@@ -40,9 +40,9 @@
 #define GPIO_OUTPUT_IO_32   (32)
 #define GPIO_OUTPUT_IO_33   (33)
 
-#define GPIO_OUTPUT_IO_2   (GPIO_NUM_2)
+#define GPIO_OUTPUT_IO_2    (GPIO_NUM_2)
 
-#define GPIO_INPUT_PIN_SEL (( 1ULL << GPIO_INPUT_IO_21 ) | \
+#define GPIO_INPUT_PIN_SEL  (( 1ULL << GPIO_INPUT_IO_21 ) | \
                             ( 1ULL << GPIO_INPUT_IO_22 ) | \
                             ( 1ULL << GPIO_INPUT_IO_23 ))
                             
@@ -50,7 +50,7 @@
 
 #define ESP_INTR_FLAG_DEFAULT 0
 
-#define PWM_AUTO_INCREMENT      (512)
+#define PWM_AUTO_INCREMENT      (64)
 
 #define PIN_SDA                 (19)
 #define PIN_SCL                 (18)
@@ -237,7 +237,7 @@ static void ui_create(lv_display_t *display)
     lv_obj_align(label_clock, LV_ALIGN_TOP_MID, 0, 10);
 
     label_adc = lv_label_create(scr);
-    lv_obj_align(label_adc, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(label_adc, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     lv_label_set_text(label_clock, "00:00:00");
     lv_label_set_text(label_adc, "ADC: 0 mV");
