@@ -55,7 +55,7 @@
 
 #define ESP_INTR_FLAG_DEFAULT 0
 
-#define PWM_AUTO_INCREMENT    (64)
+#define PWM_AUTO_INCREMENT      (64)
 
 #define PIN_SDA                 (19)
 #define PIN_SCL                 (18)
@@ -200,6 +200,40 @@ void UpdatePWN(duty_t duty)
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3));
 }
 
+void UpdatePWNFromHex(uint32_t value)
+{
+    duty_t duty;
+
+    uint8_t red   = (value >> 16) & 0xFF;
+    uint8_t green = (value >> 8)  & 0xFF;
+    uint8_t blue  = value & 0xFF;
+
+    duty.pin1 = (uint16_t) (red   *  8191) / 255;
+    duty.pin2 = (uint16_t) (green *  8191) / 255;
+    duty.pin3 = (uint16_t) (blue  *  8191) / 255;
+
+    UpdatePWN(duty);
+}
+
+void GetHexFromString(const char *string)
+{
+    char str_copy[16];
+    int idx = 0;
+
+    for(int i = 0; string[i] != '\0'; i++)
+    {
+        if(string[i] == 35) continue;
+
+        str_copy[idx++] = string[i];
+    }
+
+    str_copy[idx] = '\0';
+
+    char *endptr;
+    uint32_t value = strtoul(str_copy, &endptr, 16);
+
+    UpdatePWNFromHex(value);
+}
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t io_panel, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
     lv_display_t *disp = (lv_display_t *)user_ctx;
@@ -709,8 +743,6 @@ static void display_task(void *arg)
     ui_create(display);
     _lock_release(&lvgl_api_lock);
 
-    //char letter = 32;
-
     while (1) 
     {
         vTaskDelay(delay_ms(250));
@@ -719,19 +751,25 @@ static void display_task(void *arg)
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
-    esp_mqtt_event_handle_t event = event_data;
+    esp_mqtt_event_handle_t  event  = event_data;
     esp_mqtt_client_handle_t client = event->client;
 
-    switch ((esp_mqtt_event_id_t)event_id) 
+    switch((esp_mqtt_event_id_t)event_id) 
     {
         case MQTT_EVENT_CONNECTED:
+
+            ESP_LOGI(TAG_9, "ESP se conectou com sucesso");   
             esp_mqtt_client_subscribe(client, "/topic/duty", 0);
+
             break;
+
         case MQTT_EVENT_DISCONNECTED:
-            
             break;
 
         case MQTT_EVENT_SUBSCRIBED:
+
+            ESP_LOGW(TAG_9, "ESP se inscreveu num tópico");   
+
             break;
 
         case MQTT_EVENT_UNSUBSCRIBED:
@@ -741,13 +779,29 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             break;
 
         case MQTT_EVENT_DATA:
-            ESP_LOGI(TAG_9, "MQTT_EVENT_DATA");
-            printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-            printf("DATA=%.*s\r\n", event->data_len, event->data);
+
+            ESP_LOGW(TAG_9, "DATA = %.*s\tTOPIC=%.*s", event->topic_len, event->topic, event->data_len, event->data);
+        
             break;
+
         case MQTT_EVENT_ERROR:
+
+            ESP_LOGE(TAG_9, "ERRO: Um erro aconteceu!");
+
+            if(event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) 
+            {
+                ESP_LOGE(TAG_9, "Reportado por esp_tls_last_esp_err: %d", event->error_handle->esp_tls_last_esp_err);
+                ESP_LOGE(TAG_9, "Reportado por esp_tls_stack_err: %d", event->error_handle->esp_tls_stack_err);
+                ESP_LOGE(TAG_9, "Reportado por esp_transport_sock_errno: %d", event->error_handle->esp_transport_sock_errno);
+                ESP_LOGE(TAG_9, "Erro string: (%s)", strerror(event->error_handle->esp_transport_sock_errno));
+            }
+
             break;
+        
         default:
+
+            ESP_LOGI(TAG_9, "???: Um evento desconhecido foi executado! event_id: %d", event->event_id);
+        
             break;
     }
 }
