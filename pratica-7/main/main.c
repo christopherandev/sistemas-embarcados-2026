@@ -189,28 +189,38 @@ uint64_t GetMilisFromMHz(uint64_t MHz)
 
 void UpdatePWN(duty_t duty)
 {
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty.pin1));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));     
+    ESP_LOGI(TAG_9, "pin1 = %d", duty.pin1);
+    ESP_LOGI(TAG_9, "pin2 = %d", duty.pin2);
+    ESP_LOGI(TAG_9, "pin3 = %d", duty.pin3);
+
+    
     ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty.pin1));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1));
 
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, duty.pin2));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty.pin2));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0)); 
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, duty.pin3));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2));
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, duty.pin3));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, duty.pin1));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3));
 }
 
 void UpdatePWNFromHex(uint32_t value)
 {
+    ESP_LOGI(TAG_9, "value = %08x", value);
+
     duty_t duty;
 
     uint8_t red   = (value >> 16) & 0xFF;
     uint8_t green = (value >> 8)  & 0xFF;
     uint8_t blue  = value & 0xFF;
 
-    duty.pin1 = (uint16_t) (red   *  8191) / 255;
-    duty.pin2 = (uint16_t) (green *  8191) / 255;
-    duty.pin3 = (uint16_t) (blue  *  8191) / 255;
+    ESP_LOGI(TAG_9, "red = %d", red);
+    ESP_LOGI(TAG_9, "green = %d", green);
+    ESP_LOGI(TAG_9, "blue = %d", blue);
+    duty.pin1 = (uint16_t) (red   *  32);
+    duty.pin2 = (uint16_t) (green *  32);
+    duty.pin3 = (uint16_t) (blue  *  32);
 
     UpdatePWN(duty);
 }
@@ -219,7 +229,7 @@ void GetHexFromString(const char *string)
 {
     char str_copy[16];
     int idx = 0;
-
+    
     for(int i = 0; string[i] != '\0'; i++)
     {
         if(string[i] == 35) continue;
@@ -228,6 +238,8 @@ void GetHexFromString(const char *string)
     }
 
     str_copy[idx] = '\0';
+
+    ESP_LOGI(TAG_9, "str = %s", str_copy);
 
     char *endptr;
     uint32_t value = strtoul(str_copy, &endptr, 16);
@@ -546,7 +558,7 @@ static void pwm_task(void* arg)
         .channel        = LEDC_CHANNEL_3,
         .timer_sel      = LEDC_TIMER_0,
         .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = GPIO_OUTPUT_IO_26,
+        .gpio_num       = GPIO_OUTPUT_IO_26, //vermelho
         .duty           = 0,
         .hpoint         = 0
     };
@@ -556,7 +568,7 @@ static void pwm_task(void* arg)
 
     semaphore_pwm = xSemaphoreCreateBinary();
 
-    PWM.mode = true;
+    PWM.mode = false;
     PWM.duty.pin1 = 0;
     PWM.duty.pin2 = 0;
     PWM.duty.pin3 = 0;
@@ -768,7 +780,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
         case MQTT_EVENT_SUBSCRIBED:
 
-            ESP_LOGW(TAG_9, "ESP se inscreveu num tópico");   
+            ESP_LOGI(TAG_9, "ESP se inscreveu num tópico");   
 
             break;
 
@@ -781,7 +793,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         case MQTT_EVENT_DATA:
 
             ESP_LOGW(TAG_9, "DATA = %.*s\tTOPIC=%.*s", event->topic_len, event->topic, event->data_len, event->data);
-        
+            GetHexFromString(event->data);
             break;
 
         case MQTT_EVENT_ERROR:
@@ -802,7 +814,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
             ESP_LOGI(TAG_9, "???: Um evento desconhecido foi executado! event_id: %d", event->event_id);
         
-            break;
+        break;
     }
 }
 
@@ -827,7 +839,7 @@ void app_main(void)
     esp_log_level_set(TAG_3, ESP_LOG_NONE);
     esp_log_level_set(TAG_4, ESP_LOG_NONE);
     esp_log_level_set(TAG_5, ESP_LOG_NONE);
-    esp_log_level_set(TAG_6, ESP_LOG_NONE);
+    //esp_log_level_set(TAG_6, ESP_LOG_NONE);
     esp_log_level_set(TAG_7, ESP_LOG_NONE);
 
     PrintEspInfo();
